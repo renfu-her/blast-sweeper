@@ -64,7 +64,7 @@ const App: React.FC = () => {
 
   // Load Leaderboard
   useEffect(() => {
-    const saved = localStorage.getItem('blast_sweeper_scores');
+    const saved = localStorage.getItem('blast_sling_scores');
     if (saved) {
         try { setLeaderboard(JSON.parse(saved)); } catch (e) { console.error(e); }
     }
@@ -81,7 +81,7 @@ const App: React.FC = () => {
       };
       const updated = [...leaderboard, newEntry];
       setLeaderboard(updated);
-      localStorage.setItem('blast_sweeper_scores', JSON.stringify(updated));
+      localStorage.setItem('blast_sling_scores', JSON.stringify(updated));
       setGameState(GameState.MENU);
   };
 
@@ -107,7 +107,6 @@ const App: React.FC = () => {
         const isMobile = window.innerWidth < 640;
         setSlingshotOrigin({
             x: window.innerWidth / 2,
-            // Original Desktop: height - 180. Mobile: height - 160 (Moves it 20px down visually)
             y: window.innerHeight - (isMobile ? 160 : 180) 
         });
     };
@@ -151,11 +150,9 @@ const App: React.FC = () => {
               const size = 5;
               setGridSize(size);
               let demoGrid = createEmptyGrid(size);
-              // Controlled placement for demo
               demoGrid[1][1].isMine = true;
               demoGrid[3][3].isMine = true;
               demoGrid[0][4].isMine = true;
-              // Recalculate numbers
               for(let r=0; r<size; r++) {
                 for(let c=0; c<size; c++) {
                   if(!demoGrid[r][c].isMine) {
@@ -176,10 +173,10 @@ const App: React.FC = () => {
               await wait(1000);
 
               const targets = [
-                  { r: 2, c: 2, type: 'PROBE' }, // Safe
-                  { r: 1, c: 1, type: 'FLAG' },  // Flag mine
-                  { r: 0, c: 0, type: 'PROBE' }, // Safe
-                  { r: 3, c: 3, type: 'PROBE' }  // Bomb! (Ends demo)
+                  { r: 2, c: 2, type: 'PROBE' },
+                  { r: 1, c: 1, type: 'FLAG' },
+                  { r: 0, c: 0, type: 'PROBE' },
+                  { r: 3, c: 3, type: 'PROBE' }
               ];
 
               for (const target of targets) {
@@ -242,7 +239,7 @@ const App: React.FC = () => {
                   playSound(400, 'square', 0.1);
                   
                   await wait(2200); 
-                  if (target.r === 3 && target.c === 3) break; // End on explosion
+                  if (target.r === 3 && target.c === 3) break;
               }
 
               if (!isCancelled && gameState === GameState.MENU) {
@@ -481,7 +478,7 @@ const App: React.FC = () => {
             {gameState === GameState.MENU && (
                 <div className="absolute inset-0 bg-slate-950/40 flex flex-col items-center justify-center z-50 p-6 pointer-events-none">
                     <div className="bg-slate-900/95 border-2 border-blue-500 rounded-3xl shadow-[0_0_50px_rgba(59,130,246,0.4)] p-8 text-center animate-bounce-in backdrop-blur-md pointer-events-auto max-w-sm w-full">
-                        <h2 className="text-4xl font-black mb-1 text-blue-400 tracking-tighter italic">BLAST SWEEPER</h2>
+                        <h2 className="text-4xl font-black mb-1 text-blue-400 tracking-tighter italic">BLAST SLING</h2>
                         <p className="text-blue-500/60 font-mono text-[10px] tracking-[0.2em] mb-8 uppercase">Tactical Proximity Clearance</p>
                         
                         <div className="space-y-4 mb-10">
@@ -562,7 +559,6 @@ const App: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 flex-1 overflow-hidden max-w-6xl w-full mx-auto pb-6">
-                  {/* Mastery Rank */}
                   <div className="flex flex-col h-full bg-slate-900/60 border border-blue-500/20 rounded-[2.5rem] overflow-hidden backdrop-blur-xl shadow-2xl">
                       <div className="bg-blue-900/30 p-6 border-b border-blue-500/30 flex justify-between items-center">
                           <h3 className="font-black text-blue-300 tracking-widest italic uppercase text-sm">Level Mastery</h3>
@@ -581,7 +577,6 @@ const App: React.FC = () => {
                           ))}
                       </div>
                   </div>
-                  {/* Precision Rank */}
                   <div className="flex flex-col h-full bg-slate-900/60 border border-yellow-500/20 rounded-[2.5rem] overflow-hidden backdrop-blur-xl shadow-2xl">
                       <div className="bg-yellow-900/30 p-6 border-b border-yellow-500/30 flex justify-between items-center">
                           <h3 className="font-black text-yellow-300 tracking-widest italic uppercase text-sm">Precision Strike</h3>

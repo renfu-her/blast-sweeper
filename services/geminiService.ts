@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 
 const getClient = () => {
@@ -20,7 +21,8 @@ export const getTacticalAdvice = async (
     try {
         const prompt = `
         You are a futuristic military commander advising a drone operator.
-        The operator is clearing a minefield (Minesweeper style) using projectile probes (Angry Birds style).
+        The operator is clearing a minefield (Minesweeper style) using projectile probes (Sling-shot style).
+        The game is called Blast Sling.
         
         Current Status:
         - Mission Level: ${level}
@@ -32,7 +34,7 @@ export const getTacticalAdvice = async (
         `;
 
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3-flash-preview',
             contents: prompt,
         });
 
