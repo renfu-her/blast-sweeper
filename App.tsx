@@ -9,7 +9,7 @@ const MAX_SIZE = 30;
 const SIZE_INCREMENT = 5;
 const MAX_PULL = 250; 
 
-// Physics Constants (Must match calculation logic)
+// Physics Constants
 const PHYS_POWER = 0.15;
 const PHYS_Z_POWER = 0.15;
 const PHYS_GRAVITY = 0.5;
@@ -85,7 +85,7 @@ const App: React.FC = () => {
       setGameState(GameState.MENU);
   };
 
-  // Rank calculations
+  // Rank 1: Mastery (Level desc, then Probes asc)
   const masteryRank = useMemo(() => {
       return [...leaderboard].sort((a, b) => {
           if (b.level !== a.level) return b.level - a.level;
@@ -93,16 +93,22 @@ const App: React.FC = () => {
       }).slice(0, 10);
   }, [leaderboard]);
 
+  // Rank 2: Precision (Probes asc, then Level desc)
   const efficiencyRank = useMemo(() => {
-      return [...leaderboard].sort((a, b) => a.totalProbes - b.totalProbes).slice(0, 10);
+      return [...leaderboard].sort((a, b) => {
+          if (a.totalProbes !== b.totalProbes) return a.totalProbes - b.totalProbes;
+          return b.level - a.level;
+      }).slice(0, 10);
   }, [leaderboard]);
 
-  // Initialize Slingshot Position
+  // RWD Slingshot Position: Shifted 20px downwards on mobile
   useEffect(() => {
     const updateSlingshotPos = () => {
+        const isMobile = window.innerWidth < 640;
         setSlingshotOrigin({
             x: window.innerWidth / 2,
-            y: window.innerHeight - 180 
+            // Original Desktop: height - 180. Mobile: height - 160 (Moves it 20px down visually)
+            y: window.innerHeight - (isMobile ? 160 : 180) 
         });
     };
     updateSlingshotPos();
@@ -133,7 +139,7 @@ const App: React.FC = () => {
     return (min + max) / 2;
   }, []);
 
-  // --- DEMO SYSTEM ---
+  // --- INTERACTIVE DEMO SYSTEM ---
   useEffect(() => {
       let isCancelled = false;
       if (gameState === GameState.MENU) {
@@ -142,31 +148,45 @@ const App: React.FC = () => {
           });
 
           const runDemoCycle = async () => {
-              // 1. Init 5x5 Grid
               const size = 5;
               setGridSize(size);
               let demoGrid = createEmptyGrid(size);
-              // Pre-place mines for demo visualization
-              demoGrid = placeMines(demoGrid, 4, 2, 2); 
+              // Controlled placement for demo
+              demoGrid[1][1].isMine = true;
+              demoGrid[3][3].isMine = true;
+              demoGrid[0][4].isMine = true;
+              // Recalculate numbers
+              for(let r=0; r<size; r++) {
+                for(let c=0; c<size; c++) {
+                  if(!demoGrid[r][c].isMine) {
+                    let count = 0;
+                    for(let dr=-1; dr<=1; dr++) for(let dc=-1; dc<=1; dc++) {
+                      const nr=r+dr, nc=c+dc;
+                      if(nr>=0 && nr<size && nc>=0 && nc<size && demoGrid[nr][nc].isMine) count++;
+                    }
+                    demoGrid[r][c].neighborMines = count;
+                  }
+                }
+              }
+
               setGrid(demoGrid);
               setAmmoType('PROBE');
               setHasFirstMoved(true); 
 
-              await wait(1500);
+              await wait(1000);
 
               const targets = [
-                  { r: 2, c: 2, type: 'PROBE' },
-                  { r: 0, c: 0, type: 'PROBE' },
-                  { r: 4, c: 1, type: 'FLAG' },
-                  { r: 1, c: 4, type: 'PROBE' }
+                  { r: 2, c: 2, type: 'PROBE' }, // Safe
+                  { r: 1, c: 1, type: 'FLAG' },  // Flag mine
+                  { r: 0, c: 0, type: 'PROBE' }, // Safe
+                  { r: 3, c: 3, type: 'PROBE' }  // Bomb! (Ends demo)
               ];
 
               for (const target of targets) {
                   if (isCancelled || gameState !== GameState.MENU) return;
                   
-                  // Set Ammo Type for Demo
                   setAmmoType(target.type as any);
-                  await wait(500);
+                  await wait(400);
 
                   const cellEl = document.querySelector(`[data-row="${target.r}"][data-col="${target.c}"]`);
                   if (!cellEl) continue;
@@ -185,17 +205,15 @@ const App: React.FC = () => {
                       y: slingshotOrigin.y - Math.sin(angle) * requiredPull 
                   };
 
-                  // Pull Animation
                   setIsDragging(true);
                   const steps = 30;
                   for (let i = 0; i <= steps; i++) {
                       if (isCancelled || gameState !== GameState.MENU) return;
                       const t = i / steps;
-                      const curDragX = slingshotOrigin.x + (dragPos.x - slingshotOrigin.x) * t;
-                      const curDragY = slingshotOrigin.y + (dragPos.y - slingshotOrigin.y) * t;
-                      setDragCurrent({ x: curDragX, y: curDragY });
-                      
-                      // Update Snapped State for visual prediction in demo
+                      setDragCurrent({ 
+                        x: slingshotOrigin.x + (dragPos.x - slingshotOrigin.x) * t, 
+                        y: slingshotOrigin.y + (dragPos.y - slingshotOrigin.y) * t 
+                      });
                       setSnappedCell({ r: target.r, c: target.c });
                       setSnappedVelocity({
                           v: { x: Math.cos(angle) * requiredPull * PHYS_POWER, y: Math.sin(angle) * requiredPull * PHYS_POWER },
@@ -204,10 +222,9 @@ const App: React.FC = () => {
                       await wait(16);
                   }
                   
-                  await wait(400);
+                  await wait(300);
                   if (isCancelled || gameState !== GameState.MENU) return;
 
-                  // Release Animation
                   setIsDragging(false);
                   setDragCurrent(null);
                   setSnappedCell(null);
@@ -224,11 +241,12 @@ const App: React.FC = () => {
                   });
                   playSound(400, 'square', 0.1);
                   
-                  await wait(2000); // Wait for flight and impact
+                  await wait(2200); 
+                  if (target.r === 3 && target.c === 3) break; // End on explosion
               }
 
               if (!isCancelled && gameState === GameState.MENU) {
-                  await wait(1000);
+                  await wait(2000);
                   runDemoCycle();
               }
           };
@@ -294,7 +312,7 @@ const App: React.FC = () => {
   const handleMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
     if (gameState !== GameState.PLAYING || isPaused || activeProjectile) return;
     const pos = getClientPos(e);
-    if (pos.y > window.innerHeight * 0.5 && pos.y < window.innerHeight - 100) {
+    if (pos.y > window.innerHeight * 0.4 && pos.y < window.innerHeight - 80) {
         setIsDragging(true);
         setDragCurrent(pos);
     }
@@ -392,7 +410,6 @@ const App: React.FC = () => {
               if (checkWinCondition(nextGrid)) handleLevelComplete();
           }
       } else if (gameState === GameState.MENU) {
-          // Demo Reveal logic
           if (exploded) playSound(150, 'sawtooth', 0.5);
           else playSound(600, 'sine', 0.05);
       }
@@ -423,17 +440,21 @@ const App: React.FC = () => {
 
       {/* Header Bar */}
       <div className="bg-slate-800 p-2 shadow-lg border-b border-slate-700 z-30 flex justify-between items-center h-14 shrink-0 px-4">
-        <h1 className="text-lg font-bold text-blue-400 tracking-wider">{gameState === GameState.MENU ? 'PROTOTYPE v2.5' : `LEVEL ${level}`}</h1>
+        <h1 className="text-lg font-bold text-blue-400 tracking-wider italic">
+          {gameState === GameState.MENU ? 'PROBE SYSTEMS' : `MISSION LEVEL ${level}`}
+        </h1>
         <div className="flex gap-4 items-center">
             {gameState !== GameState.MENU && (
                 <>
-                    <span className="text-yellow-500 font-mono text-lg flex items-center gap-1">
-                        <Send size={16}/> {totalProbes}
-                    </span>
-                    <span className="text-red-400 font-mono text-lg flex items-center gap-1">
-                        <AlertTriangle size={16}/> {mineCount - flagsUsed}
-                    </span>
-                    <button onClick={handlePause} className="p-2 hover:bg-slate-700 rounded-full transition text-slate-300">
+                    <div className="flex flex-col items-end">
+                      <span className="text-[10px] text-slate-400 font-mono">SHOTS</span>
+                      <span className="text-yellow-500 font-mono leading-none">{totalProbes}</span>
+                    </div>
+                    <div className="flex flex-col items-end">
+                      <span className="text-[10px] text-slate-400 font-mono">MINES</span>
+                      <span className="text-red-400 font-mono leading-none">{mineCount - flagsUsed}</span>
+                    </div>
+                    <button onClick={handlePause} className="p-2 hover:bg-slate-700 rounded-full transition text-slate-300 ml-2">
                         <Pause size={20} />
                     </button>
                 </>
@@ -442,10 +463,9 @@ const App: React.FC = () => {
       </div>
 
       <div className="flex-1 flex flex-col relative z-10 w-full overflow-hidden">
-          {/* THE GRID (DEMO OR ACTIVE PLAY) */}
-          <div className="flex-1 flex items-center justify-center p-4 pb-10" style={{ transform: `translate(${(Math.random()-0.5)*shake}px, ${(Math.random()-0.5)*shake}px)` }}>
+          <div className="flex-1 flex items-center justify-center p-4 pb-12" style={{ transform: `translate(${(Math.random()-0.5)*shake}px, ${(Math.random()-0.5)*shake}px)` }}>
              
-             <div ref={gridContainerRef} className={`bg-slate-900/50 rounded-lg p-1 border border-slate-700 shadow-2xl backdrop-blur-sm transition-all duration-700 ${gameState === GameState.MENU ? 'opacity-90 scale-100' : 'opacity-100 scale-100'}`}
+             <div ref={gridContainerRef} className={`bg-slate-900/50 rounded-lg p-1 border border-slate-700 shadow-2xl backdrop-blur-sm transition-all duration-700 ${gameState === GameState.MENU ? 'opacity-90' : 'opacity-100'}`}
                 style={{ display: 'grid', gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))`, width: 'min(85vw, 60vh)', aspectRatio: '1/1' }}>
                     {grid.map((row, rIdx) => row.map((cell, cIdx) => (
                         <div key={`${rIdx}-${cIdx}`} data-cell="true" data-row={rIdx} data-col={cIdx} className={`w-full h-full text-[0.4rem] sm:text-[0.6rem] md:text-xs font-bold flex items-center justify-center select-none transition-all duration-200 ${snappedCell?.r === rIdx && snappedCell?.c === cIdx ? 'ring-4 ring-white z-10 scale-105 shadow-[0_0_20px_rgba(255,255,255,0.6)]' : ''} ${cell.status === CellStatus.HIDDEN ? 'bg-slate-600 border border-slate-500 hover:brightness-110' : ''} ${cell.status === CellStatus.FLAGGED ? 'bg-slate-700 border border-slate-600' : ''} ${cell.status === CellStatus.REVEALED ? 'bg-slate-800/80 border border-slate-700/30' : ''} ${cell.status === CellStatus.EXPLODED ? 'bg-red-600/40 border border-red-500' : ''}`}>
@@ -458,85 +478,83 @@ const App: React.FC = () => {
                     )))}
             </div>
 
-            {/* Menu Overlay (Transparent, Grid visible behind it) */}
             {gameState === GameState.MENU && (
                 <div className="absolute inset-0 bg-slate-950/40 flex flex-col items-center justify-center z-50 p-6 pointer-events-none">
-                    <div className="bg-slate-900/95 border-2 border-blue-500 rounded-2xl shadow-[0_0_50px_rgba(59,130,246,0.3)] p-8 text-center animate-bounce-in backdrop-blur-md pointer-events-auto max-w-sm w-full">
+                    <div className="bg-slate-900/95 border-2 border-blue-500 rounded-3xl shadow-[0_0_50px_rgba(59,130,246,0.4)] p-8 text-center animate-bounce-in backdrop-blur-md pointer-events-auto max-w-sm w-full">
                         <h2 className="text-4xl font-black mb-1 text-blue-400 tracking-tighter italic">BLAST SWEEPER</h2>
-                        <p className="text-blue-500/60 font-mono text-[10px] tracking-[0.2em] mb-6 uppercase">Tactical Proximity Clearance</p>
+                        <p className="text-blue-500/60 font-mono text-[10px] tracking-[0.2em] mb-8 uppercase">Tactical Proximity Clearance</p>
                         
-                        <div className="space-y-4 mb-8">
-                            <button onClick={() => initLevel(1)} className="w-full py-4 bg-blue-600 hover:bg-blue-500 rounded-xl font-black text-white transition transform hover:scale-105 active:scale-95 shadow-[0_4px_0_rgb(30,58,138)] active:shadow-none active:translate-y-1">
-                                START MISSION
+                        <div className="space-y-4 mb-10">
+                            <button onClick={() => initLevel(1)} className="w-full py-4 bg-blue-600 hover:bg-blue-500 rounded-2xl font-black text-white transition transform hover:scale-105 active:scale-95 shadow-[0_4px_0_rgb(30,58,138)] active:translate-y-1 uppercase tracking-tight">
+                                Start Play!
                             </button>
-                            <button onClick={() => setGameState(GameState.LEADERBOARD)} className="w-full py-3 bg-slate-800 hover:bg-slate-700 rounded-xl font-bold text-slate-300 transition flex items-center justify-center gap-2 border border-slate-700">
+                            <button onClick={() => setGameState(GameState.LEADERBOARD)} className="w-full py-3 bg-slate-800 hover:bg-slate-700 rounded-2xl font-bold text-slate-300 transition flex items-center justify-center gap-2 border border-slate-700">
                                 <Trophy size={18} /> RANKINGS
                             </button>
                         </div>
                         <div className="flex items-center gap-2 justify-center text-[10px] text-slate-500 font-mono">
                             <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
-                            LIVE DEMO IN PROGRESS
+                            OPERATIONAL DEMO ACTIVE
                         </div>
                     </div>
                 </div>
              )}
           </div>
 
-          <div className="h-[120px] flex justify-center items-end pb-6 pointer-events-none relative z-40">
+          <div className="h-[130px] flex justify-center items-end pb-8 pointer-events-none relative z-40">
             {gameState !== GameState.MENU && gameState !== GameState.LEADERBOARD && gameState !== GameState.RECORDING && (
-             <div className="pointer-events-auto bg-slate-900/90 p-3 rounded-2xl border border-slate-700 backdrop-blur-md shadow-2xl flex gap-6">
+             <div className="pointer-events-auto bg-slate-900/90 p-3 rounded-3xl border border-slate-700 backdrop-blur-md shadow-2xl flex gap-8">
                 <button onClick={(e) => { e.stopPropagation(); setAmmoType('PROBE'); }} className={`relative w-16 h-16 rounded-full flex items-center justify-center transition-all duration-200 transform hover:scale-105 active:scale-95 ${ammoType === 'PROBE' ? 'ring-[3px] ring-yellow-400 bg-slate-800' : 'bg-slate-800/50'}`}>
                     <DuckIcon color="#fcd34d" />
-                    {ammoType === 'PROBE' && <div className="absolute -bottom-8 text-[10px] font-bold text-yellow-400 tracking-widest">PROBE</div>}
+                    {ammoType === 'PROBE' && <div className="absolute -bottom-10 text-[10px] font-black text-yellow-400 tracking-widest bg-yellow-400/10 px-2 py-0.5 rounded border border-yellow-400/20">PROBE</div>}
                 </button>
                 <button onClick={(e) => { e.stopPropagation(); setAmmoType('FLAG'); }} className={`relative w-16 h-16 rounded-full flex items-center justify-center transition-all duration-200 transform hover:scale-105 active:scale-95 ${ammoType === 'FLAG' ? 'ring-[3px] ring-blue-500 bg-slate-800' : 'bg-slate-800/50'}`}>
                     <DuckIcon color="#60a5fa" />
-                    {ammoType === 'FLAG' && <div className="absolute -bottom-8 text-[10px] font-bold text-blue-400 tracking-widest">FLAG</div>}
+                    {ammoType === 'FLAG' && <div className="absolute -bottom-10 text-[10px] font-black text-blue-400 tracking-widest bg-blue-500/10 px-2 py-0.5 rounded border border-blue-400/20">FLAG</div>}
                 </button>
              </div>
             )}
           </div>
       </div>
 
-      {/* OVERLAYS (WON/LOST/PAUSED) */}
       {(gameState === GameState.WON || gameState === GameState.LOST || isPaused) && (
             <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-[55] backdrop-blur-sm p-4">
-                <div className={`p-8 rounded-2xl border-2 text-center shadow-2xl min-w-[320px] bg-slate-900 ${isPaused ? 'border-slate-500' : gameState === GameState.WON ? 'border-green-500 shadow-[0_0_30px_rgba(34,197,94,0.2)]' : 'border-red-500 shadow-[0_0_30px_rgba(239,68,68,0.2)]'}`}>
+                <div className={`p-8 rounded-3xl border-2 text-center shadow-2xl min-w-[320px] bg-slate-900 ${isPaused ? 'border-slate-500' : gameState === GameState.WON ? 'border-green-500' : 'border-red-500'}`}>
                     <h2 className={`text-4xl font-black mb-8 italic tracking-tighter ${gameState === GameState.WON ? 'text-green-500' : gameState === GameState.LOST ? 'text-red-500' : 'text-white'}`}>
-                        {isPaused ? 'PAUSED' : gameState === GameState.WON ? 'MISSION COMPLETE' : 'MISSION FAILED'}
+                        {isPaused ? 'PAUSED' : gameState === GameState.WON ? 'CLEARED' : 'FAILED'}
                     </h2>
                     <div className="flex flex-col gap-4">
-                        {isPaused ? <button onClick={handleResume} className="px-6 py-4 bg-blue-600 rounded-xl font-bold text-xl transition transform hover:scale-105">RESUME</button> : (
-                            <button onClick={gameState === GameState.WON ? handleNextLevel : handleRestart} className={`px-6 py-4 rounded-xl font-bold text-xl transition transform hover:scale-105 ${gameState === GameState.WON ? 'bg-green-600' : 'bg-red-600'}`}>
+                        {isPaused ? <button onClick={handleResume} className="px-6 py-4 bg-blue-600 rounded-2xl font-black text-xl transition transform hover:scale-105">RESUME</button> : (
+                            <button onClick={gameState === GameState.WON ? handleNextLevel : handleRestart} className={`px-6 py-4 rounded-2xl font-black text-xl transition transform hover:scale-105 ${gameState === GameState.WON ? 'bg-green-600' : 'bg-red-600'}`}>
                                 {gameState === GameState.WON ? 'NEXT LEVEL' : 'RETRY'}
                             </button>
                         )}
-                        <button onClick={handleQuit} className="px-6 py-3 bg-slate-800 hover:bg-slate-700 rounded-xl font-bold text-slate-400 transition">END MISSION</button>
+                        <button onClick={handleQuit} className="px-6 py-3 bg-slate-800 hover:bg-slate-700 rounded-2xl font-bold text-slate-400 transition">END MISSION</button>
                     </div>
                 </div>
             </div>
       )}
 
-      {/* RECORDING & LEADERBOARD (Omitted for brevity as they remain mostly same, but integrated into GameState flow) */}
       {gameState === GameState.RECORDING && (
           <div className="absolute inset-0 bg-black/95 flex items-center justify-center z-[60] backdrop-blur-md p-4">
-              <div className="bg-slate-900 border-2 border-blue-500 p-8 rounded-2xl shadow-2xl max-w-md w-full text-center">
-                  <h2 className="text-3xl font-black text-blue-400 mb-6 italic tracking-tight">SAVE CALLSIGN</h2>
-                  <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700 mb-8 grid grid-cols-2 gap-4">
-                      <div><p className="text-[10px] text-slate-500 uppercase font-mono">Max Level</p><p className="text-2xl font-black">{level}</p></div>
-                      <div><p className="text-[10px] text-slate-500 uppercase font-mono">Probes Fired</p><p className="text-2xl font-black text-yellow-500">{totalProbes}</p></div>
+              <div className="bg-slate-900 border-2 border-blue-500 p-8 rounded-3xl shadow-2xl max-w-md w-full text-center">
+                  <h2 className="text-3xl font-black text-blue-400 mb-6 italic tracking-tight">MISSION LOGS</h2>
+                  <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700 mb-8 grid grid-cols-2 gap-4">
+                      <div><p className="text-[10px] text-slate-500 uppercase font-mono mb-1 tracking-widest">Level</p><p className="text-3xl font-black">{level}</p></div>
+                      <div><p className="text-[10px] text-slate-500 uppercase font-mono mb-1 tracking-widest">Total Shots</p><p className="text-3xl font-black text-yellow-500">{totalProbes}</p></div>
                   </div>
-                  <input type="text" placeholder="CALLSIGN..." className="w-full bg-slate-950 border-2 border-slate-700 rounded-xl p-4 text-center font-black text-2xl mb-8 text-blue-400 focus:border-blue-500 transition-all uppercase outline-none" value={playerName} onChange={(e) => setPlayerName(e.target.value.toUpperCase().slice(0, 12))} />
-                  <button onClick={saveScore} disabled={!playerName.trim()} className="w-full py-4 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 rounded-xl font-black text-white transition flex items-center justify-center gap-2">RECORD DATA <ChevronRight /></button>
+                  <p className="text-slate-400 text-xs mb-4 uppercase tracking-[0.2em]">Enter Callsign</p>
+                  <input type="text" placeholder="..." className="w-full bg-slate-950 border-2 border-slate-700 rounded-2xl p-4 text-center font-black text-3xl mb-8 text-blue-400 focus:border-blue-500 transition-all uppercase outline-none" value={playerName} onChange={(e) => setPlayerName(e.target.value.toUpperCase().slice(0, 10))} />
+                  <button onClick={saveScore} disabled={!playerName.trim()} className="w-full py-5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 rounded-2xl font-black text-xl text-white transition flex items-center justify-center gap-2">ARCHIVE DATA <ChevronRight /></button>
               </div>
           </div>
       )}
 
       {gameState === GameState.LEADERBOARD && (
           <div className="absolute inset-0 bg-slate-950 flex flex-col z-[70] p-6 sm:p-10">
-              <div className="flex justify-between items-center mb-10 shrink-0 max-w-5xl w-full mx-auto">
+              <div className="flex justify-between items-center mb-10 shrink-0 max-w-6xl w-full mx-auto">
                   <h2 className="text-5xl font-black text-blue-500 flex items-center gap-6 italic tracking-tighter">
-                      <Trophy size={48} className="text-yellow-500" /> RANKINGS
+                      <Trophy size={48} className="text-yellow-500" /> WORLD RANKINGS
                   </h2>
                   <button onClick={() => setGameState(GameState.MENU)} className="p-4 bg-slate-900 hover:bg-slate-800 rounded-full text-slate-400 transition border border-slate-800">
                       <Home size={32} />
@@ -544,37 +562,39 @@ const App: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 flex-1 overflow-hidden max-w-6xl w-full mx-auto pb-6">
-                  <div className="flex flex-col h-full bg-slate-900/60 border border-blue-500/20 rounded-3xl overflow-hidden backdrop-blur-xl">
-                      <div className="bg-blue-900/30 p-5 border-b border-blue-500/30 flex justify-between items-center">
-                          <h3 className="font-black text-blue-300 tracking-widest italic">MASTER COMMANDERS (LVL)</h3>
+                  {/* Mastery Rank */}
+                  <div className="flex flex-col h-full bg-slate-900/60 border border-blue-500/20 rounded-[2.5rem] overflow-hidden backdrop-blur-xl shadow-2xl">
+                      <div className="bg-blue-900/30 p-6 border-b border-blue-500/30 flex justify-between items-center">
+                          <h3 className="font-black text-blue-300 tracking-widest italic uppercase text-sm">Level Mastery</h3>
                           <Trophy size={20} className="text-blue-500" />
                       </div>
                       <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
                           {masteryRank.map((entry, i) => (
-                              <div key={i} className="flex items-center gap-5 p-4 mb-2 bg-slate-800/40 rounded-xl border border-transparent hover:border-blue-500/30 transition-all">
-                                  <span className={`w-10 text-center font-black ${i < 3 ? 'text-yellow-400 text-2xl italic' : 'text-slate-600'}`}>{i + 1}</span>
-                                  <div className="flex-1"><p className="font-black text-blue-200 text-lg tracking-tight">{entry.name}</p></div>
+                              <div key={i} className="flex items-center gap-5 p-5 mb-3 bg-slate-800/40 rounded-3xl border border-transparent hover:border-blue-500/30 transition-all">
+                                  <span className={`w-12 text-center font-black ${i < 3 ? 'text-yellow-400 text-3xl italic' : 'text-slate-600 text-xl'}`}>{i + 1}</span>
+                                  <div className="flex-1"><p className="font-black text-blue-100 text-xl tracking-tight">{entry.name}</p></div>
                                   <div className="text-right">
-                                      <p className="text-2xl font-black text-white italic">LVL {entry.level}</p>
-                                      <p className="text-[10px] text-yellow-500 font-mono">{entry.totalProbes} PROBES</p>
+                                      <p className="text-3xl font-black text-white italic">LVL {entry.level}</p>
+                                      <p className="text-[10px] text-yellow-500 font-mono tracking-widest">{entry.totalProbes} SHOTS</p>
                                   </div>
                               </div>
                           ))}
                       </div>
                   </div>
-                  <div className="flex flex-col h-full bg-slate-900/60 border border-yellow-500/20 rounded-3xl overflow-hidden backdrop-blur-xl">
-                      <div className="bg-yellow-900/30 p-5 border-b border-yellow-500/30 flex justify-between items-center">
-                          <h3 className="font-black text-yellow-300 tracking-widest italic">DEADLY PRECISION (SHOTS)</h3>
+                  {/* Precision Rank */}
+                  <div className="flex flex-col h-full bg-slate-900/60 border border-yellow-500/20 rounded-[2.5rem] overflow-hidden backdrop-blur-xl shadow-2xl">
+                      <div className="bg-yellow-900/30 p-6 border-b border-yellow-500/30 flex justify-between items-center">
+                          <h3 className="font-black text-yellow-300 tracking-widest italic uppercase text-sm">Precision Strike</h3>
                           <Send size={20} className="text-yellow-500" />
                       </div>
                       <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
                           {efficiencyRank.map((entry, i) => (
-                              <div key={i} className="flex items-center gap-5 p-4 mb-2 bg-slate-800/40 rounded-xl border border-transparent hover:border-yellow-500/30 transition-all">
-                                  <span className={`w-10 text-center font-black ${i < 3 ? 'text-yellow-400 text-2xl italic' : 'text-slate-600'}`}>{i + 1}</span>
-                                  <div className="flex-1"><p className="font-black text-yellow-200 text-lg tracking-tight">{entry.name}</p></div>
+                              <div key={i} className="flex items-center gap-5 p-5 mb-3 bg-slate-800/40 rounded-3xl border border-transparent hover:border-yellow-500/30 transition-all">
+                                  <span className={`w-12 text-center font-black ${i < 3 ? 'text-yellow-400 text-3xl italic' : 'text-slate-600 text-xl'}`}>{i + 1}</span>
+                                  <div className="flex-1"><p className="font-black text-yellow-100 text-xl tracking-tight">{entry.name}</p></div>
                                   <div className="text-right">
-                                      <p className="text-2xl font-black text-white italic">{entry.totalProbes} SHOTS</p>
-                                      <p className="text-[10px] text-blue-500 font-mono">REACHED LVL {entry.level}</p>
+                                      <p className="text-3xl font-black text-white italic">{entry.totalProbes} SHOTS</p>
+                                      <p className="text-[10px] text-blue-500 font-mono tracking-widest">TO REACH LVL {entry.level}</p>
                                   </div>
                               </div>
                           ))}
